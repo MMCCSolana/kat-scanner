@@ -45,7 +45,7 @@ def app():
     #dataframe intialize and UI commands to get wallet input from user
     df = pd.DataFrame(index=[wk_gen], columns=['Holder','Minter','# Held','# Minted'])
     
-    st.title('Weekly Rewards Checker (5/16/2022)') 
+    st.title('Weekly Rewards Checker (5/19/2022)') 
    
     input = st.text_area("Enter your SOL wallets, enter each wallet in a new row")
     if input =="ni":
