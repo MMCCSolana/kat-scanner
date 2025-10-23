@@ -46,17 +46,51 @@ def app():
     df = pd.DataFrame(index=[wk_gen], columns=['Holder','Minter','# Held','# Minted'])
     
     st.title('Weekly Rewards Checker (5/19/2022)') 
+    st.info("🔍 Enter your Solana wallet address(es) below to check your MMCC weekly rewards history.")
    
-    input = st.text_area("Enter your SOL wallets, enter each wallet in a new row")
+    input = st.text_area("Enter your SOL wallets, enter each wallet in a new row", placeholder="Example: EbXvaxV15vjJFV2jD1iuzYAULY4g1Rak2FNX4oJJxa1Y")
     if input =="ni":
         input = "EbXvaxV15vjJFV2jD1iuzYAULY4g1Rak2FNX4oJJxa1Y"
 
-    if input is not None:
-        wallets = input.splitlines()
+    if input is not None and input.strip():
+        wallets = [w.strip() for w in input.splitlines() if w.strip()]
+    else:
+        wallets = []
+    
+    if not wallets:
+        st.warning("👆 Please enter at least one wallet address above to check rewards.")
+        return
     
     # ----------main loop once wallet is entered-------- 
     for wallet in wallets:
-        resp = requests.get("https://api.solscan.io/account/soltransfer/txs?address=" + wallet + "&offset=0&limit=100000", headers=headers).json()
+        try:
+            api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
+            response = requests.get(api_url, headers=headers, timeout=10)
+            
+            # Check if request was successful
+            if response.status_code != 200:
+                st.error(f"⚠️ Solscan API returned error {response.status_code}. Please try again in a few moments.")
+                st.info("💡 Tip: The Solscan API may be rate limiting requests. Wait 30 seconds and try again.")
+                continue
+            
+            resp = response.json()
+            
+            # Check if response has expected structure
+            if 'data' not in resp or resp['data'] is None:
+                st.error("⚠️ No transaction data found for this wallet or API temporarily unavailable.")
+                st.info("This could mean: 1) The wallet has no MMCC reward transactions, or 2) Solscan API is having issues.")
+                continue
+                
+        except requests.exceptions.Timeout:
+            st.error("⚠️ Request timed out. Solscan API is slow to respond. Please try again.")
+            continue
+        except requests.exceptions.RequestException as e:
+            st.error(f"⚠️ Network error: {str(e)}")
+            continue
+        except ValueError:
+            st.error("⚠️ Solscan API returned invalid data. The API might be temporarily down or rate limiting your requests.")
+            st.info("💡 Solutions:\n- Wait 30-60 seconds and try again\n- Check if your wallet address is correct\n- Try again during off-peak hours")
+            continue
 
         for tx in resp['data']['tx']['transactions']:
             lamports = tx['lamport']/1000000000
