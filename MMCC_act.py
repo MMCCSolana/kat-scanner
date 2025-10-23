@@ -35,7 +35,7 @@ def app():
                     price = tx['parsedTransaction']['total_amount']/1000000000
 
                     row = pd.DataFrame(data = [time, name, price, short_buyer, short_seller, short_token, buyer_link, seller_link, token_link, sig_link]).T
-                    df = df.append(row)
+                    df = pd.concat([df, row], ignore_index=True)
             else:
                 print('TX ',tx['_id'], tx['source'])
         except:

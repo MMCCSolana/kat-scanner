@@ -7,6 +7,7 @@ from streamlit_echarts import st_echarts
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from datetime import datetime
 import psycopg2
+import os
 
 def app():
 
@@ -79,7 +80,7 @@ def app():
                 moonrank = ranks.loc[ranks['ID'] == int(id), 'MoonRank'].item()
         
                 row = pd.DataFrame(data = [price, howrare_rank, moonrank, id, seller, "Solanart", buylink, img, background, fur, earring, eyes, glasses, hat, mouth, clothing]).T
-                df = df.append(row)
+                df = pd.concat([df, row], ignore_index=True)
         
     #Digitaleyes data
     def DE_scrape(URL):
@@ -109,7 +110,7 @@ def app():
                 moonrank = ranks.loc[ranks['ID'] == int(id), 'MoonRank'].item()
 
                 row = pd.DataFrame(data = [price, howrare_rank, moonrank, id, seller, "Digitaleyes", buylink, img, background, fur, earring, eyes, glasses, hat, mouth, clothing]).T
-                df = df.append(row)
+                df = pd.concat([df, row], ignore_index=True)
             if next_curs != None:
                 next_URL = DE_url + '&cursor=' + next_curs  
                 return DE_scrape(next_URL)
@@ -155,7 +156,7 @@ def app():
                     moonrank = ranks.loc[ranks['ID'] == int(id), 'MoonRank'].item()
 
                     row = pd.DataFrame(data = [price, howrare_rank, moonrank, id, seller, "Magic Eden", buylink, img, background, fur, earring, eyes, glasses, hat, mouth, clothing]).T
-                    df = df.append(row)
+                    df = pd.concat([df, row], ignore_index=True)
             #print(df)
         except:
             print("ME Error")    
@@ -560,10 +561,10 @@ def app():
     
     def historic_charts():
         con = psycopg2.connect(
-                host = "ec2-35-153-88-219.compute-1.amazonaws.com",
-                database = "d8moers639v8ep",
-                user = "rtqdsyhnkwqepo",
-                password = "9756e62250ffd60cbd98b664fc857623393385145d7fd429c67b9186b94d5afc"
+                host = os.getenv("DB_HOST", "ec2-35-153-88-219.compute-1.amazonaws.com"),
+                database = os.getenv("DB_NAME", "d8moers639v8ep"),
+                user = os.getenv("DB_USER", "rtqdsyhnkwqepo"),
+                password = os.getenv("DB_PASSWORD", "9756e62250ffd60cbd98b664fc857623393385145d7fd429c67b9186b94d5afc")
         )
         cur = con.cursor()
         floor_data = pd.DataFrame()
@@ -572,7 +573,7 @@ def app():
         for entry in data:
             date, SA_f, DE_f,ME_f,listed,holder = entry
             row = pd.DataFrame(data = [date, float(SA_f), float(DE_f),float(ME_f),float(listed),float(holder)]).T
-            floor_data = floor_data.append(row)
+            floor_data = pd.concat([floor_data, row], ignore_index=True)
         floor_data.columns = ["Date","SA","DE","ME","Listed","Holder"]
         floor_data.sort_values(by = ['Date'], inplace=True)
         con.close()
