@@ -73,9 +73,9 @@ def app():
         try:
             # Use Helius API if key is available, otherwise fall back to Solscan
             if helius_api_key:
-                # Helius Enhanced Transactions API - get all transactions and filter locally
-                api_url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions?api-key={helius_api_key}&limit=1000"
-                st.info(f"🚀 Using Helius API for faster, more reliable data...")
+                # Helius Enhanced Transactions API - returns 100 transactions by default
+                api_url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions?api-key={helius_api_key}"
+                st.info(f"🚀 Using Helius API (fetching transaction history)...")
                 response = requests.get(api_url, timeout=20)
             else:
                 api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
