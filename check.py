@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 import datetime
 import check_data
+import os
 
 def app():
     
@@ -19,6 +20,12 @@ def app():
 
     SOL_values = check_data.SOL_values
 
+    # Get Helius API key from Streamlit secrets or environment
+    helius_api_key = None
+    try:
+        helius_api_key = st.secrets.get("HELIUS_API_KEY")
+    except:
+        helius_api_key = os.getenv("HELIUS_API_KEY")
 
     #------------rest is automatic-----------------
     headers = {'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'}
@@ -64,40 +71,83 @@ def app():
     # ----------main loop once wallet is entered-------- 
     for wallet in wallets:
         try:
-            api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
-            response = requests.get(api_url, headers=headers, timeout=10)
+            # Use Helius API if key is available, otherwise fall back to Solscan
+            if helius_api_key:
+                api_url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions?api-key={helius_api_key}&limit=1000"
+                st.info(f"🚀 Using Helius API for faster, more reliable data...")
+            else:
+                api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
+                st.warning("⚠️ No Helius API key found. Using public Solscan API (may be rate limited). Add HELIUS_API_KEY to Streamlit secrets for better performance.")
+            
+            response = requests.get(api_url, headers=headers, timeout=15)
             
             # Check if request was successful
             if response.status_code != 200:
-                st.error(f"⚠️ Solscan API returned error {response.status_code}. Please try again in a few moments.")
-                st.info("💡 Tip: The Solscan API may be rate limiting requests. Wait 30 seconds and try again.")
+                api_name = "Helius" if helius_api_key else "Solscan"
+                st.error(f"⚠️ {api_name} API returned error {response.status_code}. Please try again in a few moments.")
+                if not helius_api_key:
+                    st.info("💡 Tip: Add a Helius API key to Streamlit secrets for higher rate limits!")
                 continue
             
             resp = response.json()
             
-            # Check if response has expected structure
-            if 'data' not in resp or resp['data'] is None:
-                st.error("⚠️ No transaction data found for this wallet or API temporarily unavailable.")
-                st.info("This could mean: 1) The wallet has no MMCC reward transactions, or 2) Solscan API is having issues.")
-                continue
+            # Parse response based on API used
+            if helius_api_key:
+                # Helius format: array of transaction objects
+                if not resp or not isinstance(resp, list):
+                    st.error("⚠️ No transaction data found for this wallet.")
+                    continue
+                transactions = resp
+            else:
+                # Solscan format: nested structure
+                if 'data' not in resp or resp['data'] is None:
+                    st.error("⚠️ No transaction data found for this wallet or API temporarily unavailable.")
+                    continue
+                transactions = resp['data']['tx']['transactions']
                 
         except requests.exceptions.Timeout:
-            st.error("⚠️ Request timed out. Solscan API is slow to respond. Please try again.")
+            st.error("⚠️ Request timed out. Please try again.")
             continue
         except requests.exceptions.RequestException as e:
             st.error(f"⚠️ Network error: {str(e)}")
             continue
-        except ValueError:
-            st.error("⚠️ Solscan API returned invalid data. The API might be temporarily down or rate limiting your requests.")
-            st.info("💡 Solutions:\n- Wait 30-60 seconds and try again\n- Check if your wallet address is correct\n- Try again during off-peak hours")
+        except (ValueError, KeyError) as e:
+            st.error("⚠️ API returned invalid data. Please try again later.")
+            st.info("💡 If this persists, add a Helius API key to Streamlit secrets for better reliability.")
             continue
 
-        for tx in resp['data']['tx']['transactions']:
-            lamports = tx['lamport']/1000000000
-            time = tx['blockTime']
+        for tx in transactions:
+            # Parse transaction data based on API format
+            try:
+                if helius_api_key:
+                    # Helius format - need to parse tokenTransfers
+                    time = tx.get('timestamp')
+                    if not time:
+                        continue
+                    
+                    # Look for SOL transfers in the transaction
+                    native_transfers = tx.get('nativeTransfers', [])
+                    for transfer in native_transfers:
+                        if transfer.get('toUserAccount') == wallet:
+                            lamports = transfer.get('amount', 0) / 1000000000
+                            src = transfer.get('fromUserAccount', '')
+                        else:
+                            continue
+                            
+                else:
+                    # Solscan format
+                    lamports = tx.get('lamport', 0) / 1000000000
+                    time = tx.get('blockTime')
+                    src = tx.get('src', '')
+                    
+                if not time or lamports == 0:
+                    continue
+                    
+            except (KeyError, TypeError, AttributeError):
+                continue
 
             #check for txs that are week 30+
-            if tx['src'] in hold_wallets and tx['src'] in mint_wallets:
+            if src in hold_wallets and src in mint_wallets:
                 idx = [i for i, n in enumerate(BT_dates) if time >= n and time <= BT5_dates[i]][0]
                 if round(lamports/hold_values[idx],2) % 1 == 0:
                     hold_init[idx] = hold_init[idx] + lamports
@@ -109,9 +159,9 @@ def app():
                     df.loc['Week ' + str(idx+1), '# Minted'] = round(mint_init[idx]/mint_values[idx],2)
 
             #check for holder txs before week 30
-            elif tx['src'] in hold_wallets and tx['src'] not in mint_wallets:
+            elif src in hold_wallets and src not in mint_wallets:
                 idx = [i for i, n in enumerate(BT_dates) if time >= n and time <= BT5_dates[i]][0]
-                if tx['src'] == hold_wallets[idx]:
+                if src == hold_wallets[idx]:
                     hold_init[idx] = hold_init[idx] + lamports
                     df.loc['Week ' + str(idx+1), 'Holder'] = hold_init[idx]
                     df.loc['Week ' + str(idx+1), '# Held'] = round(hold_init[idx]/hold_values[idx],2)
@@ -120,9 +170,9 @@ def app():
                     df.loc['Makeup', 'Holder'] = hold_init[idx]
 
             #check for minter txs before week 30    
-            elif tx['src'] in mint_wallets and tx['src'] not in hold_wallets:
+            elif src in mint_wallets and src not in hold_wallets:
                 idx = [i for i, n in enumerate(BT_dates) if time >= n and time <= BT5_dates[i]][0]
-                if tx['src'] == mint_wallets[idx]:
+                if src == mint_wallets[idx]:
                     mint_init[idx] = mint_init[idx]+ lamports
                     df.loc['Week ' + str(idx+1), 'Minter'] = mint_init[idx]
                     df.loc['Week ' + str(idx+1), '# Minted'] = round(mint_init[idx]/mint_values[idx],2)
@@ -131,8 +181,8 @@ def app():
                     df.loc['Makeup', 'Minter'] = mint_init[idx]
             
             #check for makeup rewards sent out
-            elif tx['src'] in makeup_wallets:
-                idx = makeup_wallets.index(tx['src'])
+            elif src in makeup_wallets:
+                idx = makeup_wallets.index(src)
                 hold_init[idx] = hold_init[idx]+ lamports
                 df.loc['Makeup', 'Holder'] = hold_init[idx]
 
