@@ -73,18 +73,25 @@ def app():
         try:
             # Use Helius API if key is available, otherwise fall back to Solscan
             if helius_api_key:
+                # Helius Enhanced Transactions API - get all transactions and filter locally
                 api_url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions?api-key={helius_api_key}&limit=1000"
                 st.info(f"🚀 Using Helius API for faster, more reliable data...")
+                response = requests.get(api_url, timeout=20)
             else:
                 api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
                 st.warning("⚠️ No Helius API key found. Using public Solscan API (may be rate limited). Add HELIUS_API_KEY to Streamlit secrets for better performance.")
-            
-            response = requests.get(api_url, headers=headers, timeout=15)
+                response = requests.get(api_url, headers=headers, timeout=15)
             
             # Check if request was successful
             if response.status_code != 200:
                 api_name = "Helius" if helius_api_key else "Solscan"
-                st.error(f"⚠️ {api_name} API returned error {response.status_code}. Please try again in a few moments.")
+                st.error(f"⚠️ {api_name} API returned error {response.status_code}.")
+                try:
+                    error_detail = response.json()
+                    if isinstance(error_detail, dict) and 'error' in error_detail:
+                        st.error(f"API Error: {error_detail.get('error')}")
+                except:
+                    pass
                 if not helius_api_key:
                     st.info("💡 Tip: Add a Helius API key to Streamlit secrets for higher rate limits!")
                 continue
