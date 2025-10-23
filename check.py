@@ -75,13 +75,17 @@ def app():
             # Use Helius API if key is available, otherwise fall back to Solscan
             if helius_api_key:
                 # Helius Enhanced Transactions API with pagination for historical data
-                st.info(f"🚀 Using Helius API (fetching historical transaction data)...")
+                st.info(f"🚀 Using Helius API (fetching reward-period transaction data)...")
+                
+                # Known signature from March 2022 to bridge activity gaps
+                # This helps wallets with gaps between 2022 and 2025
+                REWARD_BRIDGE_SIG = "GE3jn886e1JwbUjg7zD81Yz3kQRRjXFDAbRHQbT7xsdEeUvqrzUdqJXQXdn99m6Ec1tKqthPVQto1q9PAyfk3BV"
                 
                 all_transactions = []
-                before_signature = None
+                before_signature = REWARD_BRIDGE_SIG  # Start from known reward-period signature
                 page_count = 0
-                max_pages = 200  # Increased to fetch older transactions (up to 20,000 txns)
-                target_timestamp = 1633305600  # October 1, 2021 - first reward date
+                max_pages = 20  # Only need a few pages since we're starting from 2022
+                target_timestamp = 1629936000  # August 26, 2021 - first reward date
                 
                 # Fetch transactions with pagination
                 with st.spinner(f"Fetching transaction history... (page {page_count + 1})"):
@@ -121,9 +125,9 @@ def app():
                         last_tx_timestamp = page_data[-1].get('timestamp', 0) if page_data else 0
                         
                         # Update progress
-                        if page_count % 10 == 0:
+                        if page_count % 5 == 0 and page_count > 0:
                             date_str = dt.fromtimestamp(last_tx_timestamp).strftime('%Y-%m-%d') if last_tx_timestamp else 'unknown'
-                            st.info(f"📥 Page {page_count}: {len(all_transactions)} transactions (oldest: {date_str})...")
+                            st.info(f"📥 Fetched {len(all_transactions)} reward-period transactions (oldest: {date_str})...")
                         
                         # Stop if we've reached transactions before October 2021
                         if last_tx_timestamp > 0 and last_tx_timestamp < target_timestamp:
@@ -141,26 +145,12 @@ def app():
                         if len(page_data) < 100:
                             break
                 
-                st.success(f"✅ Retrieved {len(all_transactions)} total transactions from Helius API")
+                st.success(f"✅ Retrieved {len(all_transactions)} reward-period transactions from Helius API")
                 transactions = all_transactions
                 
                 if not transactions:
-                    st.warning("⚠️ No transactions found for this wallet.")
+                    st.warning("⚠️ No reward-period transactions found for this wallet.")
                     continue
-                
-                # Debug: Check first transaction structure
-                if len(transactions) > 0:
-                    st.info(f"🔍 Debug: Analyzing transaction structure...")
-                    sample_tx = transactions[0]
-                    has_native = 'nativeTransfers' in sample_tx and len(sample_tx.get('nativeTransfers', [])) > 0
-                    st.write(f"- First transaction has nativeTransfers: {has_native}")
-                    if has_native:
-                        st.write(f"- Number of native transfers: {len(sample_tx['nativeTransfers'])}")
-                        first_transfer = sample_tx['nativeTransfers'][0]
-                        st.write(f"- Sample transfer keys: {list(first_transfer.keys())}")
-                        st.write(f"- toUserAccount: {first_transfer.get('toUserAccount', 'N/A')[:20]}...")
-                        st.write(f"- fromUserAccount: {first_transfer.get('fromUserAccount', 'N/A')[:20]}...")
-                    st.write(f"- Transaction timestamp: {sample_tx.get('timestamp', 'N/A')}")
                     
             else:
                 api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
