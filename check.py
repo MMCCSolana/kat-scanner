@@ -30,8 +30,19 @@ def app():
 
     #------------rest is automatic-----------------
     headers = {'user-agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'}
-    page = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd&include_last_updated_at=true', headers=headers).json()
-    solPrice = page['solana']['usd']
+    
+    # Fetch SOL price with error handling
+    try:
+        response = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd&include_last_updated_at=true', headers=headers, timeout=10)
+        if response.status_code == 200:
+            page = response.json()
+            solPrice = page.get('solana', {}).get('usd', 150.0)  # Default to $150 if not found
+        else:
+            st.warning(f"⚠️ Could not fetch SOL price (status {response.status_code}). Using default $150.")
+            solPrice = 150.0
+    except Exception as e:
+        st.warning(f"⚠️ Could not fetch SOL price. Using default $150.")
+        solPrice = 150.0
 
     #generate week # and dates since first payout
     week = int(abs(datetime.date.today() - datetime.date(2021,9,27)).days/7)
