@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import streamlit as st
 import datetime
+from datetime import datetime as dt
 import check_data
 import os
 
@@ -79,7 +80,8 @@ def app():
                 all_transactions = []
                 before_signature = None
                 page_count = 0
-                max_pages = 50  # Limit to prevent infinite loops (5000 transactions max)
+                max_pages = 200  # Increased to fetch older transactions (up to 20,000 txns)
+                target_timestamp = 1633305600  # October 1, 2021 - first reward date
                 
                 # Fetch transactions with pagination
                 with st.spinner(f"Fetching transaction history... (page {page_count + 1})"):
@@ -115,9 +117,18 @@ def app():
                         all_transactions.extend(page_data)
                         page_count += 1
                         
+                        # Check timestamp of last transaction to see if we've gone back far enough
+                        last_tx_timestamp = page_data[-1].get('timestamp', 0) if page_data else 0
+                        
                         # Update progress
-                        if page_count % 5 == 0:
-                            st.info(f"📥 Retrieved {len(all_transactions)} transactions so far...")
+                        if page_count % 10 == 0:
+                            date_str = dt.fromtimestamp(last_tx_timestamp).strftime('%Y-%m-%d') if last_tx_timestamp else 'unknown'
+                            st.info(f"📥 Page {page_count}: {len(all_transactions)} transactions (oldest: {date_str})...")
+                        
+                        # Stop if we've reached transactions before October 2021
+                        if last_tx_timestamp > 0 and last_tx_timestamp < target_timestamp:
+                            st.success(f"✅ Reached target date! Fetched back to {dt.fromtimestamp(last_tx_timestamp).strftime('%Y-%m-%d')}")
+                            break
                         
                         # Get signature of last transaction for next page
                         if len(page_data) > 0 and 'signature' in page_data[-1]:
