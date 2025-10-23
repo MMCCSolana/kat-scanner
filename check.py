@@ -136,6 +136,20 @@ def app():
                 if not transactions:
                     st.warning("⚠️ No transactions found for this wallet.")
                     continue
+                
+                # Debug: Check first transaction structure
+                if len(transactions) > 0:
+                    st.info(f"🔍 Debug: Analyzing transaction structure...")
+                    sample_tx = transactions[0]
+                    has_native = 'nativeTransfers' in sample_tx and len(sample_tx.get('nativeTransfers', [])) > 0
+                    st.write(f"- First transaction has nativeTransfers: {has_native}")
+                    if has_native:
+                        st.write(f"- Number of native transfers: {len(sample_tx['nativeTransfers'])}")
+                        first_transfer = sample_tx['nativeTransfers'][0]
+                        st.write(f"- Sample transfer keys: {list(first_transfer.keys())}")
+                        st.write(f"- toUserAccount: {first_transfer.get('toUserAccount', 'N/A')[:20]}...")
+                        st.write(f"- fromUserAccount: {first_transfer.get('fromUserAccount', 'N/A')[:20]}...")
+                    st.write(f"- Transaction timestamp: {sample_tx.get('timestamp', 'N/A')}")
                     
             else:
                 api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
