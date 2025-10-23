@@ -73,39 +73,83 @@ def app():
         try:
             # Use Helius API if key is available, otherwise fall back to Solscan
             if helius_api_key:
-                # Helius Enhanced Transactions API - returns 100 transactions by default
-                api_url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions?api-key={helius_api_key}"
-                st.info(f"🚀 Using Helius API (fetching transaction history)...")
-                response = requests.get(api_url, timeout=20)
+                # Helius Enhanced Transactions API with pagination for historical data
+                st.info(f"🚀 Using Helius API (fetching historical transaction data)...")
+                
+                all_transactions = []
+                before_signature = None
+                page_count = 0
+                max_pages = 50  # Limit to prevent infinite loops (5000 transactions max)
+                
+                # Fetch transactions with pagination
+                with st.spinner(f"Fetching transaction history... (page {page_count + 1})"):
+                    while page_count < max_pages:
+                        api_url = f"https://api.helius.xyz/v0/addresses/{wallet}/transactions?api-key={helius_api_key}"
+                        if before_signature:
+                            api_url += f"&before={before_signature}"
+                        
+                        response = requests.get(api_url, timeout=20)
+                        
+                        if response.status_code != 200:
+                            if page_count == 0:
+                                # First page failed
+                                st.error(f"⚠️ Helius API returned error {response.status_code}.")
+                                try:
+                                    error_detail = response.json()
+                                    if isinstance(error_detail, dict) and 'error' in error_detail:
+                                        st.error(f"API Error: {error_detail.get('error')}")
+                                except:
+                                    pass
+                                break
+                            else:
+                                # Got some data, stop pagination
+                                st.warning(f"⚠️ Stopped at page {page_count} due to API error. Retrieved {len(all_transactions)} transactions.")
+                                break
+                        
+                        page_data = response.json()
+                        
+                        if not page_data or not isinstance(page_data, list) or len(page_data) == 0:
+                            # No more transactions
+                            break
+                        
+                        all_transactions.extend(page_data)
+                        page_count += 1
+                        
+                        # Update progress
+                        if page_count % 5 == 0:
+                            st.info(f"📥 Retrieved {len(all_transactions)} transactions so far...")
+                        
+                        # Get signature of last transaction for next page
+                        if len(page_data) > 0 and 'signature' in page_data[-1]:
+                            before_signature = page_data[-1]['signature']
+                        else:
+                            # No more pages
+                            break
+                        
+                        # If we got less than 100 transactions, we've reached the end
+                        if len(page_data) < 100:
+                            break
+                
+                st.success(f"✅ Retrieved {len(all_transactions)} total transactions from Helius API")
+                transactions = all_transactions
+                
+                if not transactions:
+                    st.warning("⚠️ No transactions found for this wallet.")
+                    continue
+                    
             else:
                 api_url = f"https://api.solscan.io/account/soltransfer/txs?address={wallet}&offset=0&limit=100000"
                 st.warning("⚠️ No Helius API key found. Using public Solscan API (may be rate limited). Add HELIUS_API_KEY to Streamlit secrets for better performance.")
                 response = requests.get(api_url, headers=headers, timeout=15)
-            
-            # Check if request was successful
-            if response.status_code != 200:
-                api_name = "Helius" if helius_api_key else "Solscan"
-                st.error(f"⚠️ {api_name} API returned error {response.status_code}.")
-                try:
-                    error_detail = response.json()
-                    if isinstance(error_detail, dict) and 'error' in error_detail:
-                        st.error(f"API Error: {error_detail.get('error')}")
-                except:
-                    pass
-                if not helius_api_key:
+                
+                # Check if request was successful
+                if response.status_code != 200:
+                    st.error(f"⚠️ Solscan API returned error {response.status_code}.")
                     st.info("💡 Tip: Add a Helius API key to Streamlit secrets for higher rate limits!")
-                continue
-            
-            resp = response.json()
-            
-            # Parse response based on API used
-            if helius_api_key:
-                # Helius format: array of transaction objects
-                if not resp or not isinstance(resp, list):
-                    st.error("⚠️ No transaction data found for this wallet.")
                     continue
-                transactions = resp
-            else:
+                
+                resp = response.json()
+                
                 # Solscan format: nested structure
                 if 'data' not in resp or resp['data'] is None:
                     st.error("⚠️ No transaction data found for this wallet or API temporarily unavailable.")
