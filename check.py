@@ -171,30 +171,97 @@ def app():
             # Parse transaction data based on API format
             try:
                 if helius_api_key:
-                    # Helius format - need to parse tokenTransfers
+                    # Helius format - parse nativeTransfers
                     time = tx.get('timestamp')
                     if not time:
                         continue
                     
-                    # Look for SOL transfers in the transaction
+                    # Look for SOL transfers TO this wallet in the transaction
                     native_transfers = tx.get('nativeTransfers', [])
+                    if not native_transfers:
+                        continue
+                    
+                    # Process each transfer in this transaction
                     for transfer in native_transfers:
-                        if transfer.get('toUserAccount') == wallet:
-                            lamports = transfer.get('amount', 0) / 1000000000
-                            src = transfer.get('fromUserAccount', '')
-                        else:
+                        to_account = transfer.get('toUserAccount', '')
+                        from_account = transfer.get('fromUserAccount', '')
+                        amount = transfer.get('amount', 0)
+                        
+                        # Only process transfers TO the wallet we're checking
+                        if to_account != wallet or amount == 0:
                             continue
+                        
+                        lamports = amount / 1000000000
+                        src = from_account
+                        
+                        # Now check if this is a reward transfer
+                        if not src:
+                            continue
+                        
+                        # Check for txs that are week 30+
+                        if src in hold_wallets and src in mint_wallets:
+                            try:
+                                idx = [i for i, n in enumerate(BT_dates) if time >= n and time <= BT5_dates[i]][0]
+                                if round(lamports/hold_values[idx],2) % 1 == 0:
+                                    hold_init[idx] = hold_init[idx] + lamports
+                                    df.loc['Week ' + str(idx+1), 'Holder'] = hold_init[idx]
+                                    df.loc['Week ' + str(idx+1), '# Held'] = round(hold_init[idx]/hold_values[idx],2) 
+                                else:
+                                    mint_init[idx] = mint_init[idx]+ lamports
+                                    df.loc['Week ' + str(idx+1), 'Minter'] = mint_init[idx]
+                                    df.loc['Week ' + str(idx+1), '# Minted'] = round(mint_init[idx]/mint_values[idx],2)
+                            except (IndexError, ValueError):
+                                pass  # Transaction outside date range
+
+                        # Check for holder txs before week 30
+                        elif src in hold_wallets and src not in mint_wallets:
+                            try:
+                                idx = [i for i, n in enumerate(BT_dates) if time >= n and time <= BT5_dates[i]][0]
+                                if src == hold_wallets[idx]:
+                                    hold_init[idx] = hold_init[idx] + lamports
+                                    df.loc['Week ' + str(idx+1), 'Holder'] = hold_init[idx]
+                                    df.loc['Week ' + str(idx+1), '# Held'] = round(hold_init[idx]/hold_values[idx],2)
+                                else:
+                                    hold_init[idx] = hold_init[idx]+ lamports
+                                    df.loc['Makeup', 'Holder'] = hold_init[idx]
+                            except (IndexError, ValueError):
+                                pass
+
+                        # Check for minter txs before week 30    
+                        elif src in mint_wallets and src not in hold_wallets:
+                            try:
+                                idx = [i for i, n in enumerate(BT_dates) if time >= n and time <= BT5_dates[i]][0]
+                                if src == mint_wallets[idx]:
+                                    mint_init[idx] = mint_init[idx]+ lamports
+                                    df.loc['Week ' + str(idx+1), 'Minter'] = mint_init[idx]
+                                    df.loc['Week ' + str(idx+1), '# Minted'] = round(mint_init[idx]/mint_values[idx],2)
+                                else:
+                                    mint_init[idx] = mint_init[idx]+ lamports
+                                    df.loc['Makeup', 'Minter'] = mint_init[idx]
+                            except (IndexError, ValueError):
+                                pass
+                        
+                        # Check for makeup rewards sent out
+                        elif src in makeup_wallets:
+                            try:
+                                idx = makeup_wallets.index(src)
+                                hold_init[idx] = hold_init[idx]+ lamports
+                                df.loc['Makeup', 'Holder'] = hold_init[idx]
+                            except (IndexError, ValueError):
+                                pass
+                    
+                    # Continue to next transaction (skip Solscan parsing below)
+                    continue
                             
-                else:
-                    # Solscan format
-                    lamports = tx.get('lamport', 0) / 1000000000
-                    time = tx.get('blockTime')
-                    src = tx.get('src', '')
+                # Solscan format parsing below
+                lamports = tx.get('lamport', 0) / 1000000000
+                time = tx.get('blockTime')
+                src = tx.get('src', '')
                     
                 if not time or lamports == 0:
                     continue
                     
-            except (KeyError, TypeError, AttributeError):
+            except (KeyError, TypeError, AttributeError) as e:
                 continue
 
             #check for txs that are week 30+
